@@ -1,9 +1,7 @@
 
 import streamlit as st
 import pandas as pd
-import matplotlib.pyplot as plt
 from sklearn.linear_model import LinearRegression
-from sklearn.metrics import mean_absolute_error
 
 st.set_page_config(
     page_title="Sales Demand Forecasting",
@@ -21,122 +19,122 @@ uploaded_file = st.file_uploader(
 
 if uploaded_file is not None:
 
-    data = pd.read_csv(uploaded_file)
+    try:
+        data = pd.read_csv(uploaded_file)
 
-    if not {'Date', 'Sales'}.issubset(data.columns):
-        st.error("CSV must contain Date and Sales columns.")
+        st.subheader("CSV Preview")
+        st.dataframe(data.head())
 
-    else:
-        data['Date'] = pd.to_datetime(
-            data['Date'], errors='coerce'
-        )
-        data['Sales'] = pd.to_numeric(
-            data['Sales'], errors='coerce'
+        date_col = st.selectbox(
+            "Select Date Column",
+            data.columns
         )
 
-        data = data.dropna(subset=['Date', 'Sales'])
+        sales_col = st.selectbox(
+            "Select Sales / Revenue Column",
+            data.columns
+        )
 
-        if len(data) < 12:
-            st.error("Please upload at least 12 valid records.")
+        if date_col == sales_col:
+            st.error("Select two different columns.")
 
         else:
-            monthly = (
-                data.set_index('Date')['Sales']
-                .resample('MS').sum()
-                .reset_index()
+            data[date_col] = pd.to_datetime(
+                data[date_col], errors="coerce"
             )
 
-            monthly['Time'] = range(1, len(monthly) + 1)
-
-            st.subheader("Sales Overview")
-
-            col1, col2 = st.columns(2)
-
-            col1.metric(
-                "Total Sales",
-                round(monthly['Sales'].sum(), 2)
+            data[sales_col] = pd.to_numeric(
+                data[sales_col], errors="coerce"
             )
 
-            col2.metric(
-                "Total Months",
-                len(monthly)
+            data = data.dropna(
+                subset=[date_col, sales_col]
             )
 
-            st.subheader("Monthly Sales Trend")
-
-            st.line_chart(
-                monthly.set_index('Date')['Sales']
-            )
-
-            train = monthly.iloc[:-6]
-            test = monthly.iloc[-6:]
-
-            model = LinearRegression()
-
-            model.fit(
-                train[['Time']],
-                train['Sales']
-            )
-
-            predictions = model.predict(
-                test[['Time']]
-            )
-
-            mae = mean_absolute_error(
-                test['Sales'],
-                predictions
-            )
-
-            st.subheader("Model Evaluation")
-
-            st.metric("Mean Absolute Error", round(mae, 2))
-
-            final_model = LinearRegression()
-
-            final_model.fit(
-                monthly[['Time']],
-                monthly['Sales']
-            )
-
-            periods = st.slider(
-                "Forecast Months",
-                1, 12, 6
-            )
-
-            future_time = pd.DataFrame({
-                'Time': range(
-                    len(monthly) + 1,
-                    len(monthly) + periods + 1
+            if len(data) < 12:
+                st.error(
+                    "Please upload at least 12 valid records."
                 )
-            })
 
-            future_dates = pd.date_range(
-                monthly['Date'].max() + pd.offsets.MonthBegin(1),
-                periods=periods,
-                freq='MS'
-            )
+            else:
+                monthly = (
+                    data.set_index(date_col)[sales_col]
+                    .resample("ME")
+                    .sum()
+                    .reset_index()
+                )
 
-            forecast = pd.DataFrame({
-                'Date': future_dates,
-                'Forecasted Sales': final_model.predict(
-                    future_time
-                ).round(2)
-            })
+                monthly.columns = ["Date", "Sales"]
+                monthly["Time"] = range(
+                    1, len(monthly) + 1
+                )
 
-            st.subheader("Future Demand Forecast")
+                st.subheader("Sales Overview")
 
-            st.dataframe(forecast)
+                col1, col2 = st.columns(2)
 
-            st.line_chart(
-                forecast.set_index('Date')
-            )
+                col1.metric(
+                    "Total Sales",
+                    round(monthly["Sales"].sum(), 2)
+                )
 
-            st.download_button(
-                "Download Forecast CSV",
-                forecast.to_csv(index=False),
-                "Sales_Forecast.csv",
-                "text/csv"
-            )
+                col2.metric(
+                    "Total Months",
+                    len(monthly)
+                )
 
-else:
-    st.info("Please upload your Sales CSV file.")
+                st.subheader("Monthly Sales Trend")
+
+                st.line_chart(
+                    monthly.set_index("Date")["Sales"]
+                )
+
+                st.subheader("Future Demand Forecast")
+
+                forecast_months = st.slider(
+                    "Select forecast months",
+                    1, 12, 6
+                )
+
+                model = LinearRegression()
+
+                model.fit(
+                    monthly[["Time"]],
+                    monthly["Sales"]
+                )
+
+                future_time = pd.DataFrame({
+                    "Time": range(
+                        len(monthly) + 1,
+                        len(monthly) + forecast_months + 1
+                    )
+                })
+
+                predictions = model.predict(future_time)
+
+                future_dates = pd.date_range(
+                    start=monthly["Date"].max(),
+                    periods=forecast_months + 1,
+                    freq="ME"
+                )[1:]
+
+                forecast = pd.DataFrame({
+                    "Date": future_dates,
+                    "Predicted Sales": predictions.clip(min=0)
+                })
+
+                st.dataframe(forecast)
+
+                st.line_chart(
+                    forecast.set_index("Date")
+                )
+
+                st.download_button(
+                    "Download Forecast CSV",
+                    forecast.to_csv(index=False),
+                    "Sales_Forecast.csv",
+                    "text/csv"
+                )
+
+    except Exception as e:
+        st.error(f"Error: {e}")
