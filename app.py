@@ -732,8 +732,11 @@ if uploaded_file is not None:
 
                     # Download results
 
-                    st.download_button(
-                        "Download Product-wise Forecast CSV",
-                        result_df.to_csv(index=False),
-                        "Product_Wise_Forecast.csv",
-             
+                    
+            st.download_button(
+                label="Download Product-wise Forecast CSV",
+                data=result_df.to_csv(index=False),
+                file_name="Product_Wise_Forecast.csv",
+                mime="text/csv"
+            )
+
