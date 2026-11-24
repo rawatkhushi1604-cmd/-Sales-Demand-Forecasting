@@ -1,20 +1,25 @@
-
 import streamlit as st
 import pandas as pd
-import numpy as np
+import matplotlib.pyplot as plt
 
 from sklearn.linear_model import LinearRegression
-from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from sklearn.metrics import (
+    mean_absolute_error,
+    mean_squared_error,
+    r2_score
+)
 
+# Page Configuration
 st.set_page_config(
     page_title="Sales Demand Forecasting",
     page_icon="📊",
     layout="wide"
 )
 
-st.title("Sales Demand Forecasting System")
-st.write("Analyze sales data and predict future demand.")
+st.title("📊 Sales Demand Forecasting System")
+st.write("Analyze historical sales and predict future demand.")
 
+# Upload CSV
 uploaded_file = st.file_uploader(
     "Upload Sales CSV File",
     type=["csv"]
@@ -22,185 +27,171 @@ uploaded_file = st.file_uploader(
 
 if uploaded_file is not None:
 
-    try:
-        data = pd.read_csv(uploaded_file)
+    data = pd.read_csv(uploaded_file)
 
-        st.subheader("CSV Preview")
-        st.dataframe(data.head())
+    if not {'Date', 'Sales'}.issubset(data.columns):
+        st.error("CSV must contain Date and Sales columns.")
 
-        date_col = st.selectbox(
-            "Select Date Column",
-            data.columns
+    else:
+        data['Date'] = pd.to_datetime(
+            data['Date'], errors='coerce'
         )
 
-        sales_col = st.selectbox(
-            "Select Sales / Revenue Column",
-            data.columns
+        data['Sales'] = pd.to_numeric(
+            data['Sales'], errors='coerce'
         )
 
-        if date_col == sales_col:
-            st.error("Select two different columns.")
+        data = data.dropna(
+            subset=['Date', 'Sales']
+        )
+
+        data = data.sort_values('Date')
+
+        if len(data) < 12:
+            st.error(
+                "Please upload at least 12 valid records."
+            )
 
         else:
-            data[date_col] = pd.to_datetime(
-                data[date_col],
-                errors="coerce"
+
+            # Monthly Sales Data
+            monthly = (
+                data.set_index('Date')['Sales']
+                .resample('MS')
+                .sum()
+                .reset_index()
             )
 
-            data[sales_col] = pd.to_numeric(
-                data[sales_col],
-                errors="coerce"
+            monthly['Time'] = range(
+                1, len(monthly) + 1
             )
 
-            data = data.dropna(
-                subset=[date_col, sales_col]
+            # Sales Overview
+            st.subheader("Sales Overview")
+
+            col1, col2 = st.columns(2)
+
+            col1.metric(
+                "Total Sales",
+                f"{monthly['Sales'].sum():,.2f}"
             )
 
-            if len(data) < 12:
-                st.error(
-                    "Please upload at least 12 valid records."
+            col2.metric(
+                "Total Months",
+                len(monthly)
+            )
+
+            # Monthly Sales Trend
+            st.subheader("Monthly Sales Trend")
+
+            st.line_chart(
+                monthly.set_index('Date')['Sales']
+            )
+
+            # Train Test Split
+            train = monthly.iloc[:-6]
+            test = monthly.iloc[-6:]
+
+            model = LinearRegression()
+
+            model.fit(
+                train[['Time']],
+                train['Sales']
+            )
+
+            predictions = model.predict(
+                test[['Time']]
+            )
+
+            # Model Evaluation
+            mae = mean_absolute_error(
+                test['Sales'],
+                predictions
+            )
+
+            rmse = mean_squared_error(
+                test['Sales'],
+                predictions
+            ) ** 0.5
+
+            r2 = r2_score(
+                test['Sales'],
+                predictions
+            )
+
+            st.subheader("Model Evaluation")
+
+            col1, col2, col3 = st.columns(3)
+
+            col1.metric("MAE", f"{mae:,.2f}")
+            col2.metric("RMSE", f"{rmse:,.2f}")
+            col3.metric("R² Score", f"{r2:.2f}")
+
+            # Actual vs Predicted Sales
+            st.subheader("Actual vs Predicted Sales")
+
+            comparison = pd.DataFrame({
+                'Actual Sales': test['Sales'].values,
+                'Predicted Sales': predictions
+            }, index=test['Date'])
+
+            st.line_chart(comparison)
+
+            # Final Model
+            final_model = LinearRegression()
+
+            final_model.fit(
+                monthly[['Time']],
+                monthly['Sales']
+            )
+
+            # Future Forecast
+            st.subheader("Future Demand Forecast")
+
+            periods = st.slider(
+                "Select Forecast Months",
+                1, 12, 6
+            )
+
+            future_time = pd.DataFrame({
+                'Time': range(
+                    len(monthly) + 1,
+                    len(monthly) + periods + 1
                 )
+            })
 
-            else:
-                monthly = (
-                    data.set_index(date_col)[sales_col]
-                    .resample("ME")
-                    .sum()
-                    .reset_index()
-                )
+            future_dates = pd.date_range(
+                monthly['Date'].max()
+                + pd.offsets.MonthBegin(1),
+                periods=periods,
+                freq='MS'
+            )
 
-                monthly.columns = ["Date", "Sales"]
+            forecast = pd.DataFrame({
+                'Date': future_dates,
+                'Predicted Sales': final_model.predict(
+                    future_time
+                ).round(2)
+            })
 
-                monthly["Time"] = range(
-                    1, len(monthly) + 1
-                )
+            st.dataframe(
+                forecast,
+                use_container_width=True
+            )
 
-                if len(monthly) < 12:
-                    st.error(
-                        "Please upload data covering at least 12 months."
-                    )
+            # Forecast Chart
+            st.line_chart(
+                forecast.set_index('Date')
+            )
 
-                else:
+            # Download Forecast
+            st.download_button(
+                "📥 Download Forecast CSV",
+                forecast.to_csv(index=False),
+                "Sales_Forecast.csv",
+                "text/csv"
+            )
 
-                    st.subheader("Sales Overview")
-
-                    col1, col2 = st.columns(2)
-
-                    col1.metric(
-                        "Total Sales",
-                        round(monthly["Sales"].sum(), 2)
-                    )
-
-                    col2.metric(
-                        "Total Months",
-                        len(monthly)
-                    )
-
-                    st.subheader("Monthly Sales Trend")
-
-                    st.line_chart(
-                        monthly.set_index("Date")["Sales"]
-                    )
-
-                    # MODEL EVALUATION
-
-                    train = monthly.iloc[:-6]
-                    test = monthly.iloc[-6:]
-
-                    evaluation_model = LinearRegression()
-
-                    evaluation_model.fit(
-                        train[["Time"]],
-                        train["Sales"]
-                    )
-
-                    test_predictions = evaluation_model.predict(
-                        test[["Time"]]
-                    )
-
-                    mae = mean_absolute_error(
-                        test["Sales"],
-                        test_predictions
-                    )
-
-                    rmse = np.sqrt(
-                        mean_squared_error(
-                            test["Sales"],
-                            test_predictions
-                        )
-                    )
-
-                    r2 = r2_score(
-                        test["Sales"],
-                        test_predictions
-                    )
-
-                    st.subheader("Model Evaluation")
-
-                    col1, col2, col3 = st.columns(3)
-
-                    col1.metric("MAE", round(mae, 2))
-                    col2.metric("RMSE", round(rmse, 2))
-                    col3.metric("R² Score", round(r2, 2))
-
-                    st.subheader("Actual vs Predicted Sales")
-
-                    comparison = pd.DataFrame({
-                        "Actual Sales": test["Sales"].values,
-                        "Predicted Sales": test_predictions
-                    })
-
-                    st.line_chart(comparison)
-
-                    # FUTURE DEMAND FORECAST
-
-                    st.subheader("Future Demand Forecast")
-
-                    forecast_months = st.slider(
-                        "Select forecast months",
-                        1, 12, 6
-                    )
-
-                    model = LinearRegression()
-
-                    model.fit(
-                        monthly[["Time"]],
-                        monthly["Sales"]
-                    )
-
-                    future_time = pd.DataFrame({
-                        "Time": range(
-                            len(monthly) + 1,
-                            len(monthly) + forecast_months + 1
-                        )
-                    })
-
-                    predictions = model.predict(future_time)
-
-                    future_dates = pd.date_range(
-                        start=monthly["Date"].max(),
-                        periods=forecast_months + 1,
-                        freq="ME"
-                    )[1:]
-
-                    forecast = pd.DataFrame({
-                        "Date": future_dates,
-                        "Predicted Sales": predictions.clip(min=0)
-                    })
-
-                    st.dataframe(forecast)
-
-                    st.line_chart(
-                        forecast.set_index("Date")
-                    )
-
-                    st.download_button(
-                        "Download Forecast CSV",
-                        forecast.to_csv(index=False),
-                        "Sales_Forecast.csv",
-                        "text/csv"
-                    )
-
-    except Exception as e:
-        st.error(f"Error: {e}")
-                    
+else:
+    st.info("Please upload your Sales CSV file.")
+    
