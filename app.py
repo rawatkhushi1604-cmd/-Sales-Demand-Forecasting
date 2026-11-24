@@ -1,6 +1,6 @@
+
 import streamlit as st
 import pandas as pd
-import matplotlib.pyplot as plt
 
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import (
@@ -29,15 +29,22 @@ if uploaded_file is not None:
 
     data = pd.read_csv(uploaded_file)
 
-# Automatic column name detection
-if 'Order Date' in data.columns:
-    data = data.rename(
-        columns={'Order Date': 'Date'}
-    )
+    # Automatic column name detection
+    if 'Order Date' in data.columns:
+        data = data.rename(
+            columns={'Order Date': 'Date'}
+        )
 
-if not {'Date', 'Sales'}.issubset(data.columns):
-    st.error("CSV must contain Date and Sales columns.")
+    # Check required columns
+    if not {'Date', 'Sales'}.issubset(data.columns):
+
+        st.error(
+            "CSV must contain Date (or Order Date) and Sales columns."
+        )
+
     else:
+
+        # Data Cleaning
         data['Date'] = pd.to_datetime(
             data['Date'], errors='coerce'
         )
@@ -52,24 +59,25 @@ if not {'Date', 'Sales'}.issubset(data.columns):
 
         data = data.sort_values('Date')
 
-        if len(data) < 12:
+        # Monthly Sales Data
+        monthly = (
+            data.set_index('Date')['Sales']
+            .resample('MS')
+            .sum()
+            .reset_index()
+        )
+
+        if len(monthly) < 12:
+
             st.error(
-                "Please upload at least 12 valid records."
+                "Please upload at least 12 months of valid sales data."
             )
 
         else:
 
-            # Monthly Sales Data
-            monthly = (
-                data.set_index('Date')['Sales']
-                .resample('MS')
-                .sum()
-                .reset_index()
-            )
-
             monthly['Time'] = range(
                 1, len(monthly) + 1
-            
+            )
 
             # Sales Overview
             st.subheader("Sales Overview")
@@ -198,5 +206,6 @@ if not {'Date', 'Sales'}.issubset(data.columns):
             )
 
 else:
+
     st.info("Please upload your Sales CSV file.")
-    
+        
