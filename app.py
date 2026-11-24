@@ -559,9 +559,10 @@ else:
             st.warning(
                 "Not enough monthly data is available for analysis."
 )
-# PRODUCT-WISE DEMAND FORECASTING
 
-st.header("📦 Product-wise Demand Forecasting")
+# AUTOMATIC ALL-PRODUCTS DEMAND FORECASTING
+
+st.header("📦 Automatic Product-wise Demand Forecasting")
 
 if (
     date_col == "Not selected"
@@ -570,8 +571,8 @@ if (
 ):
 
     st.warning(
-        "Please select Date Column, Product Name Column "
-        "and Product Demand Column from the sidebar."
+        "Please select Date, Product Name and Demand columns "
+        "from the sidebar."
     )
 
 else:
@@ -596,336 +597,161 @@ else:
         product_data[demand_col] >= 0
     ]
 
+    product_data[product_col] = (
+        product_data[product_col].astype(str)
+    )
+
     if product_data.empty:
 
-        st.error("No valid product demand data found.")
+        st.error("No valid product data found.")
 
     else:
 
-        available_products = sorted(
-            product_data[product_col].astype(str).unique()
+        all_products = sorted(
+            product_data[product_col].unique()
         )
 
-        selected_product = st.selectbox(
-            "Select a Product",
-            available_products
+        st.success(
+            f"Total Products Detected: {len(all_products)}"
         )
 
-        product_history = product_data[
-            product_data[product_col].astype(str)
-            == selected_product
-        ].copy()
-
-        monthly_product = make_monthly_data(
-            product_history,
-            date_col,
-            demand_col
+        st.write(
+            "The system will automatically forecast demand "
+            "for every product in your uploaded dataset."
         )
 
-        st.subheader(
-            f"📊 Historical Demand: {selected_product}"
-        )
+        all_forecasts = []
+        all_metrics = []
+        skipped_products = []
 
-        if not monthly_product.empty:
+        for product in all_products:
 
-            fig, ax = plt.subplots(figsize=(12, 5))
+            product_history = product_data[
+                product_data[product_col] == product
+            ].copy()
 
-            ax.plot(
-                monthly_product["Date"],
-                monthly_product["Value"],
-                marker="o"
+            monthly_product = make_monthly_data(
+                product_history,
+                date_col,
+                demand_col
             )
 
-            ax.set_title(
-                f"Monthly Demand of {selected_product}"
+            if len(monthly_product) < 6:
+
+                skipped_products.append(product)
+                continue
+
+            evaluation = train_and_evaluate(
+                monthly_product
             )
 
-            ax.set_xlabel("Month")
-            ax.set_ylabel("Units Sold / Demand")
-            ax.grid(True)
-            plt.xticks(rotation=45)
-            plt.tight_layout()
+            if evaluation is None:
+                skipped_products.append(product)
+                continue
 
-            st.pyplot(fig)
-            plt.close(fig)
+            best_model = evaluation["best_model"]
 
-        if len(monthly_product) < 6:
+            future = forecast_future(
+                monthly_product,
+                best_model,
+                forecast_periods
+            )
 
-            st.warning(
-                "At least 6 months of product history is required "
-                "for demand forecasting."
+            future["Product"] = product
+
+            future = future.rename(
+                columns={
+                    "Predicted Value": "Predicted Demand"
+                }
+            )
+
+            future["Predicted Demand"] = (
+                future["Predicted Demand"].round(0)
+            )
+
+            all_forecasts.append(future)
+
+            model_result = evaluation["results"][best_model]
+
+            all_metrics.append({
+                "Product": product,
+                "Best Model": best_model,
+                "MAE": round(model_result["MAE"], 2),
+                "RMSE": round(model_result["RMSE"], 2),
+                "R2": round(model_result["R2"], 3)
+            })
+
+        if all_forecasts:
+
+            final_forecast = pd.concat(
+                all_forecasts,
+                ignore_index=True
+            )
+
+            final_forecast = final_forecast[
+                ["Product", "Date", "Predicted Demand"]
+            ]
+
+            st.subheader("🔮 Forecast for All Products")
+
+            st.dataframe(
+                final_forecast,
+                use_container_width=True
+            )
+
+            st.subheader("🤖 Product-wise Model Performance")
+
+            metrics_df = pd.DataFrame(all_metrics)
+
+            st.dataframe(
+                metrics_df,
+                use_container_width=True
+            )
+
+            st.subheader("📊 Product Demand Forecast Chart")
+
+            chart_data = final_forecast.pivot(
+                index="Date",
+                columns="Product",
+                values="Predicted Demand"
+            )
+
+            st.line_chart(chart_data)
+
+            forecast_csv = final_forecast.to_csv(
+                index=False
+            ).encode("utf-8")
+
+            st.download_button(
+                "⬇️ Download All Products Forecast",
+                data=forecast_csv,
+                file_name="all_products_demand_forecast.csv",
+                mime="text/csv"
+            )
+
+            metrics_csv = metrics_df.to_csv(
+                index=False
+            ).encode("utf-8")
+
+            st.download_button(
+                "⬇️ Download Model Performance Report",
+                data=metrics_csv,
+                file_name="product_model_performance.csv",
+                mime="text/csv"
             )
 
         else:
 
-            product_evaluation = train_and_evaluate(
-                monthly_product
+            st.warning(
+                "No product has at least 6 months of history. "
+                "More historical data is required."
             )
 
-            if product_evaluation is not None:
+        if skipped_products:
 
-                st.subheader("🤖 Product Model Comparison")
-
-                product_performance = pd.DataFrame(
-                    product_evaluation["results"]
-                ).T
-
-                st.dataframe(
-                    product_performance,
-                    use_container_width=True
+            st.info(
+                f"{len(skipped_products)} products were skipped "
+                "because they have insufficient historical data."
                 )
-
-                product_best_model = product_evaluation[
-                    "best_model"
-                ]
-
-                st.success(
-                    f"Best Model for {selected_product}: "
-                    f"{product_best_model}"
-                )
-
-                st.subheader("📉 Product Forecast Accuracy")
-
-                product_comparison = pd.DataFrame({
-                    "Date": product_evaluation["test_dates"].values,
-                    "Actual Demand": product_evaluation["actual"],
-                    "Predicted Demand": product_evaluation[
-                        "predictions"
-                    ][product_best_model]
-                })
-
-                st.dataframe(
-                    product_comparison,
-                    use_container_width=True
-                )
-
-                fig, ax = plt.subplots(figsize=(12, 5))
-
-                ax.plot(
-                    product_comparison["Date"],
-                    product_comparison["Actual Demand"],
-                    marker="o",
-                    label="Actual Demand"
-                )
-
-                ax.plot(
-                    product_comparison["Date"],
-                    product_comparison["Predicted Demand"],
-                    marker="o",
-                    label="Predicted Demand"
-                )
-
-                ax.set_title(
-                    f"Actual vs Predicted Demand: {selected_product}"
-                )
-
-                ax.set_xlabel("Month")
-                ax.set_ylabel("Demand (Units)")
-                ax.legend()
-                ax.grid(True)
-                plt.xticks(rotation=45)
-                plt.tight_layout()
-
-                st.pyplot(fig)
-                plt.close(fig)
-
-                # FUTURE PRODUCT DEMAND
-
-                product_future = forecast_future(
-                    monthly_product,
-                    product_best_model,
-                    forecast_periods
-                )
-
-                product_future = product_future.rename(
-                    columns={
-                        "Predicted Value": "Predicted Demand"
-                    }
-                )
-
-                product_future["Predicted Demand"] = (
-                    product_future["Predicted Demand"].round(0)
-                )
-
-                st.subheader(
-                    f"🔮 Next {forecast_periods} Months Demand Forecast"
-                )
-
-                st.dataframe(
-                    product_future,
-                    use_container_width=True
-                )
-
-                fig, ax = plt.subplots(figsize=(12, 5))
-
-                ax.plot(
-                    monthly_product["Date"],
-                    monthly_product["Value"],
-                    marker="o",
-                    label="Historical Demand"
-                )
-
-                ax.plot(
-                    product_future["Date"],
-                    product_future["Predicted Demand"],
-                    marker="o",
-                    linestyle="--",
-                    label="Future Demand"
-                )
-
-                ax.set_title(
-                    f"Future Demand Forecast: {selected_product}"
-                )
-
-                ax.set_xlabel("Month")
-                ax.set_ylabel("Demand (Units)")
-                ax.legend()
-                ax.grid(True)
-                plt.xticks(rotation=45)
-                plt.tight_layout()
-
-                st.pyplot(fig)
-                plt.close(fig)
-
-                product_csv = product_future.to_csv(
-                    index=False
-                ).encode("utf-8")
-
-                st.download_button(
-                    "⬇️ Download Product Demand Forecast",
-                    data=product_csv,
-                    file_name="product_demand_forecast.csv",
-                    mime="text/csv"
-)
-        
-# ALL PRODUCTS DEMAND COMPARISON
-
-st.header("🏆 Product Demand Comparison")
-
-if (
-    product_col != "Not selected"
-    and demand_col != "Not selected"
-):
-
-    comparison_data = df.copy()
-
-    comparison_data[demand_col] = pd.to_numeric(
-        comparison_data[demand_col],
-        errors="coerce"
-    )
-
-    comparison_data = comparison_data.dropna(
-        subset=[product_col, demand_col]
-    )
-
-    comparison_data = comparison_data[
-        comparison_data[demand_col] >= 0
-    ]
-
-    if not comparison_data.empty:
-
-        product_summary = (
-            comparison_data.groupby(product_col)[demand_col]
-            .agg(
-                Total_Demand="sum",
-                Average_Demand="mean",
-                Total_Orders="count"
-            )
-            .sort_values(
-                by="Total_Demand",
-                ascending=False
-            )
-            .reset_index()
-        )
-
-        product_summary["Total_Demand"] = (
-            product_summary["Total_Demand"].round(2)
-        )
-
-        product_summary["Average_Demand"] = (
-            product_summary["Average_Demand"].round(2)
-        )
-
-        st.subheader("📋 Product Performance Ranking")
-
-        st.dataframe(
-            product_summary,
-            use_container_width=True
-        )
-
-        fig, ax = plt.subplots(figsize=(12, 6))
-
-        ax.bar(
-            product_summary[product_col].astype(str),
-            product_summary["Total_Demand"]
-        )
-
-        ax.set_title("Total Demand by Product")
-        ax.set_xlabel("Product")
-        ax.set_ylabel("Total Units Sold")
-        plt.xticks(rotation=60, ha="right")
-        plt.tight_layout()
-
-        st.pyplot(fig)
-        plt.close(fig)
-
-        best_product = product_summary.iloc[0]
-
-        st.success(
-            f"Highest Demand Product: "
-            f"{best_product[product_col]} "
-            f"({best_product['Total_Demand']:,.0f} units)"
-        )
-
-        summary_csv = product_summary.to_csv(
-            index=False
-        ).encode("utf-8")
-
-        st.download_button(
-            "⬇️ Download Product Performance Report",
-            data=summary_csv,
-            file_name="product_performance_report.csv",
-            mime="text/csv"
-        )
-
-    else:
-
-        st.warning("No valid product data available.")
-
-else:
-
-    st.info(
-        "Select Product Name Column and Product Demand Column "
-        "to view product comparison."
-    )
-
-
-# PROJECT INFORMATION
-
-st.divider()
-
-st.subheader("ℹ️ About This Project")
-
-st.write(
-    """
-    **Sales Demand Forecasting System**
-
-    This application provides:
-
-    - Business Analytics and Revenue Analysis
-    - Category-wise Sales Analysis
-    - Monthly Sales Trends
-    - Overall Sales Forecasting
-    - Product-wise Demand Forecasting
-    - Linear Regression and Random Forest Models
-    - Model Performance Evaluation using MAE, RMSE and R²
-    - Downloadable Forecast Reports
-
-    The application supports flexible CSV datasets containing
-    date, sales, product and demand information.
-    """
-)
-
-st.caption(
-    "Developed as a B.Tech Computer Science and Data Science Project."
-)
+            
+                        
