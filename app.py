@@ -1,18 +1,16 @@
-
 import streamlit as st
 import pandas as pd
 import numpy as np
 
 from sklearn.linear_model import LinearRegression
+from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import (
     mean_absolute_error,
     mean_squared_error,
     r2_score
 )
 
-# -----------------------------------------
 # PAGE CONFIGURATION
-# -----------------------------------------
 
 st.set_page_config(
     page_title="Business Analytics & Product Forecasting",
@@ -27,9 +25,81 @@ st.write(
     "and forecast future demand for individual products."
 )
 
-# -----------------------------------------
+# HELPER FUNCTIONS
+
+def create_features(dates, start_time=1):
+
+    dates = pd.to_datetime(dates)
+
+    return pd.DataFrame({
+        "Time": np.arange(
+            start_time,
+            start_time + len(dates)
+        ),
+        "MonthSin": np.sin(
+            2 * np.pi * dates.month / 12
+        ),
+        "MonthCos": np.cos(
+            2 * np.pi * dates.month / 12
+        )
+    })
+
+
+def calculate_metrics(actual, predicted):
+
+    mae = mean_absolute_error(actual, predicted)
+
+    rmse = np.sqrt(
+        mean_squared_error(actual, predicted)
+    )
+
+    r2 = r2_score(actual, predicted)
+
+    return mae, rmse, r2
+
+
+def get_models():
+
+    return {
+        "Linear Regression": LinearRegression(),
+
+        "Random Forest": RandomForestRegressor(
+            n_estimators=200,
+            max_depth=5,
+            min_samples_leaf=2,
+            random_state=42
+        )
+    }
+
+
+def make_monthly_data(frame):
+
+    monthly_series = (
+        frame
+        .set_index("Date")["Value"]
+        .resample("MS")
+        .sum()
+    )
+
+    full_months = pd.date_range(
+        monthly_series.index.min(),
+        monthly_series.index.max(),
+        freq="MS"
+    )
+
+    monthly_series = monthly_series.reindex(
+        full_months,
+        fill_value=0
+    )
+
+    monthly = monthly_series.rename("Value").reset_index()
+
+    monthly.columns = ["Date", "Value"]
+
+    return monthly
+
+
 # DATASET UPLOAD
-# -----------------------------------------
 
 uploaded_file = st.file_uploader(
     "Upload Any CSV Dataset",
@@ -40,6 +110,7 @@ if uploaded_file is not None:
 
     try:
         data = pd.read_csv(uploaded_file)
+
     except Exception as e:
         st.error(f"Unable to read CSV: {e}")
         st.stop()
@@ -48,31 +119,33 @@ if uploaded_file is not None:
         st.error("The uploaded CSV file is empty.")
         st.stop()
 
-    # -----------------------------------------
+    if len(data.columns) == 0:
+        st.error("No columns found in the uploaded CSV.")
+        st.stop()
+
     # DATASET OVERVIEW
-    # -----------------------------------------
 
     st.header("1. Dataset Overview")
 
     col1, col2, col3 = st.columns(3)
 
     col1.metric("Total Records", len(data))
+
     col2.metric("Total Columns", len(data.columns))
+
     col3.metric(
         "Missing Values",
         int(data.isnull().sum().sum())
     )
 
-    st.write("Dataset Preview")
+    st.subheader("Dataset Preview")
 
     st.dataframe(
         data.head(10),
         use_container_width=True
     )
-
-    # -----------------------------------------
+    
     # COLUMN DETECTION
-    # -----------------------------------------
 
     st.header("2. Select Columns for Analysis")
 
@@ -96,8 +169,10 @@ if uploaded_file is not None:
 
     date_candidates = [
         col for col in data.columns
-        if str(col).strip().lower() in date_names
-        or "date" in str(col).strip().lower()
+        if (
+            str(col).strip().lower() in date_names
+            or "date" in str(col).strip().lower()
+        )
     ]
 
     numeric_columns = []
@@ -112,15 +187,14 @@ if uploaded_file is not None:
         if converted.notna().sum() > 0:
             numeric_columns.append(col)
 
-    # -----------------------------------------
-    # DATE SELECTION
-    # -----------------------------------------
+    # DATE COLUMN
 
     date_options = ["Not selected"] + list(data.columns)
 
     date_default = (
         date_options.index(date_candidates[0])
-        if date_candidates else 0
+        if date_candidates
+        else 0
     )
 
     date_col = st.selectbox(
@@ -130,9 +204,7 @@ if uploaded_file is not None:
         key="main_date"
     )
 
-    # -----------------------------------------
-    # NUMERIC COLUMN SELECTION
-    # -----------------------------------------
+    # NUMERIC COLUMN
 
     metric_col = "Not selected"
 
@@ -156,9 +228,7 @@ if uploaded_file is not None:
     else:
         st.warning("No numeric columns detected.")
 
-    # -----------------------------------------
-    # CATEGORY SELECTION
-    # -----------------------------------------
+    # CATEGORY COLUMN
 
     category_columns = [
         col for col in data.columns
@@ -174,9 +244,7 @@ if uploaded_file is not None:
         key="main_category"
     )
 
-    # -----------------------------------------
     # BUSINESS ANALYTICS
-    # -----------------------------------------
 
     st.header("3. Complete Business Analytics")
 
@@ -211,15 +279,11 @@ if uploaded_file is not None:
                 f"{values.min():,.2f}"
             )
 
-            # Distribution
-
-            st.subheader(
-                f"{metric_col} Distribution"
-            )
+            st.subheader(f"{metric_col} Distribution")
 
             st.bar_chart(values.head(20))
 
-            # Category Analysis
+            # CATEGORY ANALYSIS
 
             if category_col != "Not selected":
 
@@ -248,11 +312,10 @@ if uploaded_file is not None:
                 st.dataframe(
                     category_summary.reset_index(),
                     use_container_width=True
-                )
-
-    # -----------------------------------------
-    # OVERALL SALES FORECASTING
-    # -----------------------------------------
+        )
+    
+    
+    # OVERALL DEMAND FORECASTING
 
     st.header("4. Overall Demand Forecasting")
 
@@ -274,13 +337,7 @@ if uploaded_file is not None:
 
         if not forecast_data.empty:
 
-            monthly = (
-                forecast_data
-                .set_index("Date")["Value"]
-                .resample("MS")
-                .sum()
-                .reset_index()
-            )
+            monthly = make_monthly_data(forecast_data)
 
             st.subheader("Monthly Trend")
 
@@ -290,114 +347,143 @@ if uploaded_file is not None:
 
             if len(monthly) >= 12:
 
-                monthly["Time"] = range(
-                    1,
-                    len(monthly) + 1
+                # PREPARE FEATURES
+
+                features = create_features(
+                    monthly["Date"]
                 )
 
-                train = monthly.iloc[:-6]
-                test = monthly.iloc[-6:]
+                monthly["Time"] = features["Time"]
+                monthly["MonthSin"] = features["MonthSin"]
+                monthly["MonthCos"] = features["MonthCos"]
 
-                model = LinearRegression()
+                feature_cols = [
+                    "Time",
+                    "MonthSin",
+                    "MonthCos"
+                ]
 
-                model.fit(
-                    train[["Time"]],
-                    train["Value"]
-                )
+                # TRAIN AND TEST DATA
 
-                predictions = model.predict(
-                    test[["Time"]]
-                )
+                train = monthly.iloc[:-6].copy()
+                test = monthly.iloc[-6:].copy()
 
-                mae = mean_absolute_error(
-                    test["Value"],
-                    predictions
-                )
+                X_train = train[feature_cols]
+                y_train = train["Value"]
 
-                rmse = np.sqrt(
-                    mean_squared_error(
-                        test["Value"],
+                X_test = test[feature_cols]
+                y_test = test["Value"]
+
+                # MODEL COMPARISON
+
+                st.subheader("Model Comparison")
+
+                models = get_models()
+
+                evaluation_results = []
+                predictions_dict = {}
+
+                for model_name, model in models.items():
+
+                    model.fit(X_train, y_train)
+
+                    predictions = model.predict(X_test)
+
+                    mae, rmse, r2 = calculate_metrics(
+                        y_test,
                         predictions
                     )
-                )
 
-                r2 = r2_score(
-                    test["Value"],
-                    predictions
-                )
+                    evaluation_results.append({
+                        "Model": model_name,
+                        "MAE": round(mae, 2),
+                        "RMSE": round(rmse, 2),
+                        "R2 Score": round(r2, 3)
+                    })
 
-                st.subheader("Model Evaluation")
+                    predictions_dict[model_name] = predictions
 
-                col1, col2, col3 = st.columns(3)
+                # SEASONAL NAIVE
 
-                col1.metric("MAE", f"{mae:,.2f}")
-                col2.metric("RMSE", f"{rmse:,.2f}")
-                col3.metric("R² Score", f"{r2:.2f}")
+                if len(monthly) >= 18:
 
-                st.subheader("Actual vs Predicted")
-
-                comparison = pd.DataFrame({
-                    "Actual": test["Value"].values,
-                    "Predicted": predictions
-                }, index=test["Date"])
-
-                st.line_chart(comparison)
-
-                # Future Forecast
-
-                st.subheader("Future Forecast")
-
-                periods = st.slider(
-                    "Select Future Months",
-                    1,
-                    12,
-                    6,
-                    key="overall_periods"
-                )
-
-                final_model = LinearRegression()
-
-                final_model.fit(
-                    monthly[["Time"]],
-                    monthly["Value"]
-                )
-
-                future_time = pd.DataFrame({
-                    "Time": range(
-                        len(monthly) + 1,
-                        len(monthly) + periods + 1
+                    seasonal_predictions = (
+                        monthly["Value"].iloc[-12:-6].values
                     )
-                })
 
-                future_dates = pd.date_range(
-                    monthly["Date"].max()
-                    + pd.offsets.MonthBegin(1),
-                    periods=periods,
-                    freq="MS"
+                    mae, rmse, r2 = calculate_metrics(
+                        y_test,
+                        seasonal_predictions
+                    )
+
+                    evaluation_results.append({
+                        "Model": "Seasonal Naive",
+                        "MAE": round(mae, 2),
+                        "RMSE": round(rmse, 2),
+                        "R2 Score": round(r2, 3)
+                    })
+
+                evaluation_df = pd.DataFrame(
+                    evaluation_results
                 )
 
-                forecast = pd.DataFrame({
-                    "Date": future_dates,
-                    "Predicted Value": final_model.predict(
-                        future_time
-                    ).round(2)
-                })
+                # SELECT BEST MODEL
+
+                best_index = evaluation_df["MAE"].idxmin()
+
+                best_model_name = evaluation_df.loc[
+                    best_index,
+                    "Model"
+                ]
 
                 st.dataframe(
-                    forecast,
+                    evaluation_df.sort_values("MAE"),
                     use_container_width=True
                 )
 
-                st.line_chart(
-                    forecast.set_index("Date")
+                st.success(
+                    f"Best Model Selected: {best_model_name}"
                 )
 
-                st.download_button(
-                    "Download Overall Forecast CSV",
-                    forecast.to_csv(index=False),
-                    "Overall_Forecast.csv",
-                    "text/csv"
+                best_row = evaluation_df.loc[best_index]
+
+                col1, col2, col3 = st.columns(3)
+
+                col1.metric(
+                    "Best Model MAE",
+                    f"{best_row['MAE']:,.2f}"
                 )
+
+                col2.metric(
+                    "Best Model RMSE",
+                    f"{best_row['RMSE']:,.2f}"
+                )
+
+                col3.metric(
+                    "Best Model R2",
+                    f"{best_row['R2 Score']:.3f}"
+                )
+
+                # ACTUAL VS PREDICTED
+
+                st.subheader("Actual vs Predicted")
+
+                if best_model_name == "Seasonal Naive":
+
+                    best_predictions = seasonal_predictions
+
+                else:
+
+                    best_predictions = predictions_dict[
+                        best_model_name
+                    ]
+
+                comparison = pd.DataFrame({
+                    "Actual": y_test.values,
+                    "Predicted": best_predictions
+                }, index=test["Date"])
+
+                st.line_chart(comparison)
 
             else:
 
@@ -417,58 +503,174 @@ if uploaded_file is not None:
         st.info(
             "Select a Date Column and Numeric Column "
             "to enable overall forecasting."
-        )
+            )
+        
+    # FUTURE DEMAND FORECAST
 
-    # -----------------------------------------
-    # PRODUCT-WISE DEMAND FORECASTING
-    # -----------------------------------------
-
-    st.header("5. Flexible Product-wise Demand Forecasting")
-
-    st.write(
-        "Forecast demand for individual products across "
-        "different industries using your own dataset."
-    )
+    st.subheader("Future Demand Forecast")
 
     if (
         date_col != "Not selected"
-        and numeric_columns
+        and metric_col != "Not selected"
+        and not forecast_data.empty
+        and len(monthly) >= 12
     ):
 
-        product_columns = [
-            col for col in data.columns
-            if col != date_col
-        ]
+        forecast_months = st.slider(
+            "Number of Future Months",
+            min_value=1,
+            max_value=12,
+            value=6,
+            key="overall_forecast_months"
+        )
 
-        col1, col2 = st.columns(2)
+        future_dates = pd.date_range(
+            start=monthly["Date"].max() + pd.offsets.MonthBegin(1),
+            periods=forecast_months,
+            freq="MS"
+        )
 
-        with col1:
+        future_features = create_features(
+            future_dates,
+            start_time=len(monthly) + 1
+        )
 
-            product_col = st.selectbox(
-                "Select Product Name Column",
-                product_columns,
-                key="product_name_column"
+        future_predictions = []
+
+        if best_model_name == "Seasonal Naive":
+
+            for i in range(forecast_months):
+
+                value = monthly["Value"].iloc[
+                    -12 + (i % 12)
+                ]
+
+                future_predictions.append(value)
+
+        else:
+
+            final_model = get_models()[best_model_name]
+
+            final_model.fit(
+                monthly[feature_cols],
+                monthly["Value"]
             )
 
-        with col2:
-
-            product_metric = st.selectbox(
-                "Select Demand Column (Quantity, Sales, Revenue, etc.)",
-                numeric_columns,
-                key="product_metric_column"
+            future_predictions = final_model.predict(
+                future_features[feature_cols]
             )
 
-        product_periods = st.slider(
-            "Select Product Forecast Months",
-            1,
-            12,
-            6,
-            key="product_periods"
+        future_df = pd.DataFrame({
+            "Date": future_dates,
+            "Predicted Demand": np.maximum(
+                future_predictions,
+                0
+            )
+        })
+
+        st.dataframe(
+            future_df.round(2),
+            use_container_width=True
+        )
+
+        st.line_chart(
+            future_df.set_index("Date")
+        )
+
+        st.download_button(
+            label="Download Overall Forecast CSV",
+            data=future_df.to_csv(index=False),
+            file_name="Overall_Demand_Forecast.csv",
+            mime="text/csv"
+        )
+
+    # PRODUCT-WISE FORECASTING SETUP
+
+    st.header("5. Product-wise Demand Forecasting")
+
+    st.write(
+        "Select the product name and demand columns "
+        "to forecast demand for individual products."
+    )
+
+    product_columns = [
+        col for col in data.columns
+        if col != date_col
+        and col not in numeric_columns
+    ]
+
+    product_options = [
+        "Not selected"
+    ] + product_columns
+
+    product_default = 0
+
+    for i, col in enumerate(product_options):
+
+        if str(col).strip().lower() in [
+            "product",
+            "product name",
+            "item",
+            "item name"
+        ]:
+            product_default = i
+            break
+
+    product_col = st.selectbox(
+        "Select Product Name Column",
+        product_options,
+        index=product_default,
+        key="product_name_column"
+    )
+
+    demand_default = 0
+
+    for i, col in enumerate(numeric_columns):
+
+        if str(col).strip().lower() in [
+            "quantity",
+            "demand",
+            "units sold"
+        ]:
+            demand_default = i
+            break
+
+    demand_col = "Not selected"
+
+    if numeric_columns:
+
+        demand_col = st.selectbox(
+            "Select Product Demand Column",
+            numeric_columns,
+            index=demand_default,
+            key="product_demand_column"
+        )
+
+    else:
+
+        st.warning(
+            "No numeric demand column found."
+    )
+    
+    # PRODUCT-WISE FORECASTING
+
+    if (
+        date_col != "Not selected"
+        and product_col != "Not selected"
+        and demand_col != "Not selected"
+    ):
+
+        forecast_period = st.slider(
+            "Select Future Forecast Period (Months)",
+            min_value=1,
+            max_value=12,
+            value=6,
+            key="product_forecast_period"
         )
 
         if st.button(
             "Generate Product-wise Forecast",
-            type="primary"
+            key="generate_product_forecast"
         ):
 
             product_data = pd.DataFrame({
@@ -476,267 +678,325 @@ if uploaded_file is not None:
                     data[date_col],
                     errors="coerce"
                 ),
-                "Product": data[product_col],
+                "Product": data[product_col].astype(str),
                 "Value": pd.to_numeric(
-                    data[product_metric],
+                    data[demand_col],
                     errors="coerce"
                 )
             }).dropna()
 
+            product_data = product_data[
+                (product_data["Product"] != "")
+                & (product_data["Product"].str.lower() != "nan")
+            ]
+
             if product_data.empty:
 
                 st.error(
-                    "No valid product, date and numeric data found."
+                    "No valid product data found. "
+                    "Please check your selected columns."
                 )
 
             else:
 
-                product_data["Product"] = (
-                    product_data["Product"].astype(str)
-                )
-
-                latest_month = (
-                    product_data["Date"].max()
+                first_month = (
+                    product_data["Date"]
+                    .min()
                     .to_period("M")
                     .to_timestamp()
                 )
 
-                forecast_results = []
-                evaluation_actual = []
-                evaluation_predicted = []
-                skipped_products = []
+                last_month = (
+                    product_data["Date"]
+                    .max()
+                    .to_period("M")
+                    .to_timestamp()
+                )
 
-                # Forecast each product separately
+                all_months = pd.date_range(
+                    start=first_month,
+                    end=last_month,
+                    freq="MS"
+                )
 
-                for product in product_data["Product"].unique():
+                product_results = []
+                future_results = []
 
-                    one_product = product_data[
-                        product_data["Product"] == product
-                    ]
+                progress = st.progress(0)
 
-                    monthly_product = (
-                        one_product
+                products = sorted(
+                    product_data["Product"].unique()
+                )
+
+                for product_number, product_name in enumerate(products):
+
+                    product_frame = product_data[
+                        product_data["Product"] == product_name
+                    ].copy()
+
+                    monthly_series = (
+                        product_frame
                         .set_index("Date")["Value"]
                         .resample("MS")
                         .sum()
+                        .reindex(all_months, fill_value=0)
                     )
 
-                    full_months = pd.date_range(
-                        monthly_product.index.min(),
-                        latest_month,
-                        freq="MS"
-                    )
-
-                    monthly_product = (
-                        monthly_product
-                        .reindex(full_months, fill_value=0)
-                    )
-
-                    monthly_product = (
-                        monthly_product.reset_index(drop=True)
-                    )
-
-                    # Minimum historical data requirement
-
-                    if len(monthly_product) < 12:
-
-                        skipped_products.append(product)
+                    if len(monthly_series) < 12:
                         continue
 
-                    product_monthly = pd.DataFrame({
-                        "Time": range(
-                            1,
-                            len(monthly_product) + 1
-                        ),
-                        "Value": monthly_product.values
+                    monthly_product = pd.DataFrame({
+                        "Date": all_months,
+                        "Value": monthly_series.values
                     })
 
-                    # Train and test
-
-                    train_product = product_monthly.iloc[:-6]
-                    test_product = product_monthly.iloc[-6:]
-
-                    product_model = LinearRegression()
-
-                    product_model.fit(
-                        train_product[["Time"]],
-                        train_product["Value"]
+                    product_features = create_features(
+                        monthly_product["Date"]
                     )
 
-                    test_predictions = product_model.predict(
-                        test_product[["Time"]]
-                    )
+                    feature_columns = [
+                        "Time",
+                        "MonthSin",
+                        "MonthCos"
+                    ]
 
-                    evaluation_actual.extend(
-                        test_product["Value"].tolist()
-                    )
+                    train = monthly_product.iloc[:-6]
+                    test = monthly_product.iloc[-6:]
 
-                    evaluation_predicted.extend(
-                        test_predictions.tolist()
-                    )
+                    X_train = product_features.iloc[:-6][
+                        feature_columns
+                    ]
 
-                    # Train final model on all history
+                    X_test = product_features.iloc[-6:][
+                        feature_columns
+                    ]
 
-                    final_product_model = LinearRegression()
+                    y_train = train["Value"]
+                    y_test = test["Value"]
 
-                    final_product_model.fit(
-                        product_monthly[["Time"]],
-                        product_monthly["Value"]
-                    )
+                    model_scores = []
+                    prediction_store = {}
 
-                    future_time = pd.DataFrame({
-                        "Time": range(
-                            len(product_monthly) + 1,
-                            len(product_monthly)
-                            + product_periods + 1
+                    # LINEAR REGRESSION AND RANDOM FOREST
+
+                    for model_name, model in get_models().items():
+
+                        model.fit(X_train, y_train)
+
+                        predictions = model.predict(X_test)
+
+                        mae, rmse, r2 = calculate_metrics(
+                            y_test,
+                            predictions
                         )
+
+                        model_scores.append({
+                            "Model": model_name,
+                            "MAE": mae,
+                            "RMSE": rmse,
+                            "R2 Score": r2
+                        })
+
+                        prediction_store[model_name] = predictions
+
+                    # SEASONAL NAIVE MODEL
+
+                    if len(monthly_product) >= 18:
+
+                        seasonal_predictions = (
+                            monthly_product["Value"]
+                            .iloc[-12:-6]
+                            .values
+                        )
+
+                        mae, rmse, r2 = calculate_metrics(
+                            y_test,
+                            seasonal_predictions
+                        )
+
+                        model_scores.append({
+                            "Model": "Seasonal Naive",
+                            "MAE": mae,
+                            "RMSE": rmse,
+                            "R2 Score": r2
+                        })
+
+                        prediction_store[
+                            "Seasonal Naive"
+                        ] = seasonal_predictions
+
+                    scores_df = pd.DataFrame(model_scores)
+
+                    best_index = scores_df["MAE"].idxmin()
+
+                    best_model_name = scores_df.loc[
+                        best_index,
+                        "Model"
+                    ]
+
+                    best_scores = scores_df.loc[best_index]
+
+                    product_results.append({
+                        "Product": product_name,
+                        "Best Model": best_model_name,
+                        "MAE": round(best_scores["MAE"], 2),
+                        "RMSE": round(best_scores["RMSE"], 2),
+                        "R2 Score": round(best_scores["R2 Score"], 3)
                     })
 
-                    future_predictions = (
-                        final_product_model
-                        .predict(future_time)
-                    )
-
-                    future_predictions = np.maximum(
-                        future_predictions,
-                        0
-                    )
+                    # FUTURE PREDICTION
 
                     future_dates = pd.date_range(
-                        latest_month
-                        + pd.offsets.MonthBegin(1),
-                        periods=product_periods,
+                        start=all_months[-1] + pd.offsets.MonthBegin(1),
+                        periods=forecast_period,
                         freq="MS"
                     )
 
-                    for date, prediction in zip(
+                    if best_model_name == "Seasonal Naive":
+
+                        future_predictions = [
+                            monthly_product["Value"].iloc[
+                                -12 + (i % 12)
+                            ]
+                            for i in range(forecast_period)
+                        ]
+
+                    else:
+
+                        final_model = get_models()[best_model_name]
+
+                        final_model.fit(
+                            product_features[feature_columns],
+                            monthly_product["Value"]
+                        )
+
+                        future_features = create_features(
+                            future_dates,
+                            start_time=len(monthly_product) + 1
+                        )
+
+                        future_predictions = final_model.predict(
+                            future_features[feature_columns]
+                        )
+
+                    for forecast_date, prediction in zip(
                         future_dates,
                         future_predictions
                     ):
 
-                        forecast_results.append({
-                            "Product": product,
-                            "Month": date.strftime("%Y-%m"),
+                        future_results.append({
+                            "Product": product_name,
+                            "Date": forecast_date,
                             "Predicted Demand": round(
-                                float(prediction), 2
+                                max(0, float(prediction)),
+                                2
                             )
                         })
 
-                # -----------------------------------------
-                # DISPLAY PRODUCT FORECASTS
-                # -----------------------------------------
-
-                if forecast_results:
-
-                    result_df = pd.DataFrame(
-                        forecast_results
+                    progress.progress(
+                        (product_number + 1) / len(products)
                     )
+
+                progress.empty()
+
+                # DISPLAY RESULTS
+
+                if product_results:
+
+                    result_df = pd.DataFrame(product_results)
+
+                    future_df = pd.DataFrame(future_results)
 
                     st.success(
-                        "Product-wise forecasting completed!"
+                        f"Forecast completed for "
+                        f"{len(result_df)} products."
                     )
 
-                    st.subheader(
-                        "Product-wise Forecast Results"
-                    )
+                    st.subheader("Product-wise Model Evaluation")
 
                     st.dataframe(
-                        result_df,
+                        result_df.sort_values("MAE"),
                         use_container_width=True
                     )
 
-                    # Product ranking
-
-                    product_summary = (
-                        result_df
-                        .groupby("Product")["Predicted Demand"]
-                        .sum()
-                        .reset_index()
-                        .rename(columns={
-                            "Predicted Demand":
-                            "Total Predicted Demand"
-                        })
-                        .sort_values(
-                            "Total Predicted Demand",
-                            ascending=False
-                        )
-                    )
-
-                    st.subheader(
-                        "Product Demand Ranking"
-                    )
+                    st.subheader("Future Product-wise Demand Forecast")
 
                     st.dataframe(
-                        product_summary,
+                        future_df,
                         use_container_width=True
                     )
 
-                    st.subheader(
-                        "Predicted Demand by Product"
-                    )
+                    st.subheader("Product-wise Forecast Chart")
 
-                    chart_data = result_df.pivot(
-                        index="Month",
+                    chart_data = future_df.pivot(
+                        index="Date",
                         columns="Product",
                         values="Predicted Demand"
                     )
 
                     st.line_chart(chart_data)
 
-                    # Highest predicted demand
+                    # PRODUCT RANKING
 
-                    top_product = product_summary.iloc[0]
+                    st.subheader("Product Demand Ranking")
 
-                    st.subheader(
-                        "Top Predicted Product"
+                    ranking = (
+                        future_df
+                        .groupby("Product")["Predicted Demand"]
+                        .sum()
+                        .sort_values(ascending=False)
+                        .reset_index()
                     )
 
-                    st.metric(
-                        "Highest Forecasted Demand",
-                        str(top_product["Product"]),
-                        f"{top_product['Total Predicted Demand']:,.2f} "
-                        "total predicted units/value"
+                    ranking.columns = [
+                        "Product",
+                        "Total Predicted Demand"
+                    ]
+
+                    ranking.insert(
+                        0,
+                        "Rank",
+                        range(1, len(ranking) + 1)
                     )
 
-                    # Product model evaluation
+                    st.dataframe(
+                        ranking,
+                        use_container_width=True
+                    )
 
-                    if evaluation_actual:
+                    st.success(
+                        "Top Forecasted Product: "
+                        + str(ranking.iloc[0]["Product"])
+                    )
 
-                        st.subheader(
-                            "Product Model Evaluation"
-                        )
+                    # DOWNLOAD FILES
 
-                        product_mae = mean_absolute_error(
-                            evaluation_actual,
-                            evaluation_predicted
-                        )
+                    st.download_button(
+                        label="Download Product-wise Forecast CSV",
+                        data=future_df.to_csv(index=False),
+                        file_name="Product_Wise_Forecast.csv",
+                        mime="text/csv"
+                    )
 
-                        product_rmse = np.sqrt(
-                            mean_squared_error(
-                                evaluation_actual,
-                                evaluation_predicted
-                            )
-                        )
+                    st.download_button(
+                        label="Download Product Model Evaluation CSV",
+                        data=result_df.to_csv(index=False),
+                        file_name="Product_Model_Evaluation.csv",
+                        mime="text/csv"
+                    )
 
-                        col1, col2 = st.columns(2)
+                else:
 
-                        col1.metric(
-                            "Product MAE",
-                            f"{product_mae:,.2f}"
-                        )
+                    st.warning(
+                        "No products have at least 12 monthly "
+                        "periods of data. Try a dataset with "
+                        "more historical records."
+                    )
 
-                        col2.metric(
-                            "Product RMSE",
-                            f"{product_rmse:,.2f}"
-                        )
+    else:
 
-                    # Download results
-
+        st.info(
+            "Select Date, Product Name and Demand columns "
+            "to enable product-wise forecasting."
+    )
                     
-            st.download_button(
-                label="Download Product-wise Forecast CSV",
-                data=result_df.to_csv(index=False),
-                file_name="Product_Wise_Forecast.csv",
-                mime="text/csv"
-            )
-
