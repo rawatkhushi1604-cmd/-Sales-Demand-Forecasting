@@ -27,9 +27,12 @@ st.write(
 
 # HELPER FUNCTIONS
 
+
 def create_features(dates, start_time=1):
 
-    dates = pd.to_datetime(dates)
+    dates = pd.DatetimeIndex(
+        pd.to_datetime(dates)
+    )
 
     return pd.DataFrame({
         "Time": np.arange(
@@ -43,7 +46,7 @@ def create_features(dates, start_time=1):
             2 * np.pi * dates.month / 12
         )
     })
-
+    
 
 def calculate_metrics(actual, predicted):
 
