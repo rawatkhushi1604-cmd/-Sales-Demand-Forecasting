@@ -198,11 +198,12 @@ def forecast_future(monthly_data, model_name, periods):
     
 # CSV UPLOAD
 
-st.sidebar.header("📂 Upload Dataset")
+st.header("📂 Upload Your Dataset")
 
-uploaded_file = st.sidebar.file_uploader(
-    "Upload your CSV file",
-    type=["csv"]
+uploaded_file = st.file_uploader(
+    "Choose a CSV file",
+    type=["csv"],
+    key="main_csv_uploader"
 )
 
 if uploaded_file is None:
