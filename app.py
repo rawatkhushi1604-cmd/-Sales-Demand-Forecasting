@@ -198,18 +198,19 @@ def forecast_future(monthly_data, model_name, periods):
         "Date": future_dates,
         "Predicted Value": predictions
     })
-        
+    
 # DATASET UPLOAD
 
-st.sidebar.header("📂 Upload Your Dataset")
+st.header("📂 Upload Your Sales Dataset")
 
-uploaded_file = st.sidebar.file_uploader(
-    "Upload CSV File",
-    type=["csv"]
+uploaded_file = st.file_uploader(
+    "Choose your CSV file",
+    type=["csv"],
+    key="main_csv_uploader"
 )
 
 if uploaded_file is None:
-    st.info("Please upload your sales dataset CSV file to continue.")
+    st.info("Please upload your CSV file to start forecasting.")
     st.stop()
 
 try:
@@ -222,21 +223,6 @@ if df.empty:
     st.error("The uploaded dataset is empty.")
     st.stop()
 
-st.header("📊 Dataset Overview")
-
-col1, col2, col3 = st.columns(3)
-
-with col1:
-    st.metric("Total Records", len(df))
-
-with col2:
-    st.metric("Total Columns", len(df.columns))
-
-with col3:
-    st.metric("Missing Values", int(df.isnull().sum().sum()))
-
-st.subheader("Dataset Preview")
-st.dataframe(df.head(10), use_container_width=True)
 
 # AUTOMATIC COLUMN DETECTION
 
