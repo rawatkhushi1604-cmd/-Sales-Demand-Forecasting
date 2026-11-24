@@ -69,7 +69,7 @@ if not {'Date', 'Sales'}.issubset(data.columns):
 
             monthly['Time'] = range(
                 1, len(monthly) + 1
-            )
+            
 
             # Sales Overview
             st.subheader("Sales Overview")
