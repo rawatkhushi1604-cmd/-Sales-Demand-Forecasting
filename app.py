@@ -29,9 +29,14 @@ if uploaded_file is not None:
 
     data = pd.read_csv(uploaded_file)
 
-    if not {'Date', 'Sales'}.issubset(data.columns):
-        st.error("CSV must contain Date and Sales columns.")
+# Automatic column name detection
+if 'Order Date' in data.columns:
+    data = data.rename(
+        columns={'Order Date': 'Date'}
+    )
 
+if not {'Date', 'Sales'}.issubset(data.columns):
+    st.error("CSV must contain Date and Sales columns.")
     else:
         data['Date'] = pd.to_datetime(
             data['Date'], errors='coerce'
