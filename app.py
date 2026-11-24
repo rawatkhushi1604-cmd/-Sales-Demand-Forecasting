@@ -677,7 +677,14 @@ st.divider()
 # AUTOMATIC PRODUCT-WISE DEMAND FORECASTING
 # ==========================================
 
+    
+# ==========================================
+# AUTOMATIC PRODUCT-WISE DEMAND FORECASTING
+# ==========================================
+
 st.header("📦 Automatic Product-wise Demand Forecasting")
+
+# Check whether required product columns are available
 
 if (
     date_col == "Not selected"
@@ -685,9 +692,11 @@ if (
     or demand_col == "Not selected"
 ):
 
-    st.warning(
-        "Please select Date, Product Name and Product Demand "
-        "columns from the sidebar."
+    st.info(
+        "Product-wise forecasting is not available for this dataset "
+        "because Product Name or Quantity column is missing. "
+        "Your Business Analytics and Overall Sales Forecasting "
+        "sections can still work normally."
     )
 
 else:
@@ -713,11 +722,11 @@ else:
     ]
 
     product_data[product_col] = (
-        product_data[product_col].astype(str)
+        product_data[product_col].astype(str).str.strip()
     )
 
     product_data = product_data[
-        product_data[product_col].str.strip() != ""
+        product_data[product_col] != ""
     ]
 
     all_products = sorted(
@@ -732,7 +741,7 @@ else:
     all_metrics = []
     skipped_products = []
 
-    # FORECAST EACH PRODUCT AUTOMATICALLY
+    # FORECAST EACH PRODUCT
 
     for product in all_products:
 
@@ -792,7 +801,7 @@ else:
             "R2": round(model_result["R2"], 3)
         })
 
-    # DISPLAY FORECAST RESULTS
+    # DISPLAY PRODUCT FORECASTS
 
     if all_forecasts:
 
@@ -812,7 +821,7 @@ else:
             use_container_width=True
         )
 
-        # PRODUCT MODEL PERFORMANCE
+        # MODEL PERFORMANCE
 
         st.subheader("🤖 Product-wise Model Performance")
 
@@ -823,7 +832,7 @@ else:
             use_container_width=True
         )
 
-        # PRODUCT FORECAST CHART
+        # FORECAST CHART
 
         st.subheader("📊 Product Demand Forecast Chart")
 
@@ -835,7 +844,7 @@ else:
 
         st.line_chart(chart_data)
 
-        # PRODUCT FORECAST DOWNLOAD
+        # DOWNLOAD FORECAST
 
         forecast_download = final_forecast.to_csv(
             index=False
@@ -848,15 +857,15 @@ else:
             mime="text/csv"
         )
 
-        # PRODUCT MODEL METRICS DOWNLOAD
+        # DOWNLOAD MODEL PERFORMANCE
 
-        product_metrics_download = metrics_df.to_csv(
+        metrics_download = metrics_df.to_csv(
             index=False
         ).encode("utf-8")
 
         st.download_button(
             label="⬇️ Download Product Model Performance",
-            data=product_metrics_download,
+            data=metrics_download,
             file_name="product_model_performance.csv",
             mime="text/csv"
         )
@@ -881,9 +890,11 @@ else:
             "Total Historical Demand"
         ]
 
-        historical_ranking["Total Historical Demand"] = (
-            historical_ranking["Total Historical Demand"].round(0)
-        )
+        historical_ranking[
+            "Total Historical Demand"
+        ] = historical_ranking[
+            "Total Historical Demand"
+        ].round(0)
 
         historical_ranking.insert(
             0,
@@ -1001,9 +1012,9 @@ else:
         )
 
         st.write(
-            "4. Compare these forecasts with actual inventory, "
-            "supplier lead time and business requirements before "
-            "making stock decisions."
+            "4. Compare forecasts with actual inventory, supplier "
+            "lead time and business requirements before making "
+            "stock decisions."
         )
 
     else:
@@ -1073,3 +1084,5 @@ st.markdown(
 st.success(
     "Thank you for using the Sales Demand Forecasting System! 🚀"
 )
+
+        
