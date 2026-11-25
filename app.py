@@ -554,7 +554,6 @@ else:
         )
 
         st.divider()
-
         # ==========================================
         # BUSINESS RECOMMENDATIONS
         # ==========================================
@@ -577,4 +576,21 @@ else:
             st.subheader("📈 High Demand Products")
             if not high_demand_products.empty:
                 for product, demand in high_demand_products.items():
-                    st.wri
+                    st.write(f"• **{product}** — Average forecast demand: {demand:.0f} units")
+            else:
+                st.info("No products above average forecast demand.")
+
+        with recommendation_col2:
+            st.subheader("📉 Lower Demand Products")
+            if not low_demand_products.empty:
+                for product, demand in low_demand_products.items():
+                    st.write(f"• **{product}** — Average forecast demand: {demand:.0f} units")
+            else:
+                st.info("No products below average forecast demand.")
+
+        st.subheader("🧠 Business Insights")
+        st.write("1. Products with higher forecast demand may need greater attention during purchasing and replenishment planning.")
+        st.write("2. Products with lower forecast demand can be reviewed for pricing, promotion and marketing opportunities.")
+        st.write("3. Use product-wise model performance to understand how accurately demand is being predicted.")
+        st.write("4. Compare forecasts with actual inventory, supplier lead time and business requirements before making stock decisions.")
+        
