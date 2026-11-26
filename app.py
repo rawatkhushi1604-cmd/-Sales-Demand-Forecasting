@@ -152,9 +152,7 @@ def format_date_col(df_in, col="Date"):
     out = df_in.copy()
     out[col] = pd.to_datetime(out[col]).dt.strftime("%Y-%m-%d")
     return out
-
-
-# ==========================================
+    # ==========================================
 # DATASET UPLOAD
 # ==========================================
 st.header("📂 Upload Your Sales Dataset")
@@ -198,7 +196,6 @@ def get_default(options, preferred):
 
 # ==========================================
 # SIDEBAR SETTINGS
-# ==========================================
 # ==========================================
 st.sidebar.header("⚙️ Business Analytics Settings")
 
@@ -266,6 +263,7 @@ with col3:
         f"{df[product_col].nunique():,}" if product_col != "Not selected" else "Not Selected"
     )
 
+st.divider()
 st.divider()
 
 # ==========================================
@@ -398,7 +396,8 @@ else:
                     index=False
                 ).encode("utf-8")
                 st.download_button(
-                                      data=forecast_csv,
+                    label="⬇️ Download Overall Sales Forecast",
+                    data=forecast_csv,
                     file_name="overall_sales_forecast.csv",
                     mime="text/csv"
                 )
@@ -416,7 +415,6 @@ else:
             )
 
 st.divider()
-
 # ==========================================
 # AUTOMATIC PRODUCT-WISE DEMAND FORECASTING
 # ==========================================
@@ -592,5 +590,4 @@ else:
         st.write("1. Products with higher forecast demand may need greater attention during purchasing and replenishment planning.")
         st.write("2. Products with lower forecast demand can be reviewed for pricing, promotion and marketing opportunities.")
         st.write("3. Use product-wise model performance to understand how accurately demand is being predicted.")
-        st.write("4. Compare forecasts with actual inventory, supplier lead time and business requirements before making stock decisions.")  label="⬇️ Download Overall Sales Forecast",
-                
+        st.write("4. Compare forecasts with actual inventory, supplier lead time and business requirements before making stock decisions.")
